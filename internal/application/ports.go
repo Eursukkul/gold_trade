@@ -5,6 +5,8 @@ import (
 	"context"
 	"time"
 
+	"intergold-assessment/internal/domain"
+
 	"github.com/shopspring/decimal"
 )
 
@@ -15,7 +17,7 @@ type BalanceProvider interface {
 
 // MarketPriceProvider returns the latest market price.
 type MarketPriceProvider interface {
-	CurrentPrice(ctx context.Context) (MarketPrice, error)
+	CurrentPrice(ctx context.Context) (domain.MarketPrice, error)
 }
 
 // DailyVolumeProvider returns already traded baht-weight for a customer and day.

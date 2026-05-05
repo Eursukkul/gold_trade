@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"intergold-assessment/internal/application"
+	"intergold-assessment/internal/domain"
 
 	"github.com/shopspring/decimal"
 )
@@ -16,12 +16,12 @@ import (
 type Store struct {
 	mu       sync.RWMutex
 	balances map[string]decimal.Decimal
-	price    application.MarketPrice
+	price    domain.MarketPrice
 	volumes  map[string]decimal.Decimal
 }
 
 // NewStore creates an in-memory store with caller-provided data.
-func NewStore(balances map[string]decimal.Decimal, price application.MarketPrice, volumes map[string]decimal.Decimal) *Store {
+func NewStore(balances map[string]decimal.Decimal, price domain.MarketPrice, volumes map[string]decimal.Decimal) *Store {
 	return &Store{
 		balances: cloneMap(balances),
 		price:    price,
@@ -43,7 +43,7 @@ func (s *Store) AvailableBalance(_ context.Context, customerID string) (decimal.
 }
 
 // CurrentPrice returns the configured market price.
-func (s *Store) CurrentPrice(_ context.Context) (application.MarketPrice, error) {
+func (s *Store) CurrentPrice(_ context.Context) (domain.MarketPrice, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 

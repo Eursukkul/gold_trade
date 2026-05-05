@@ -20,7 +20,7 @@ func main() {
 		map[string]decimal.Decimal{
 			"C001": decimal.RequireFromString("500000"),
 		},
-		application.MarketPrice{
+		domain.MarketPrice{
 			BaseSellPrice: decimal.RequireFromString("42150"),
 			AsOf:          tradeDate,
 		},

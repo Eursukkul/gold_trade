@@ -19,12 +19,6 @@ var (
 	zero              = decimal.Zero
 )
 
-// MarketPrice is the current reference price in THB per baht-weight.
-type MarketPrice struct {
-	BaseSellPrice decimal.Decimal
-	AsOf          time.Time
-}
-
 // Validator validates gold orders using injected data sources.
 type Validator struct {
 	balances BalanceProvider
@@ -79,10 +73,15 @@ func (v *Validator) Validate(ctx context.Context, order domain.Order) (domain.Va
 	}
 
 	v.validatePrice(order, market, &result)
-	v.validateDailyLimit(ctx, order, &result)
+
+	if err := v.validateDailyLimit(ctx, order, &result); err != nil {
+		return result, err
+	}
 
 	if order.Type == domain.OrderTypeBuy {
-		v.validateBalance(ctx, order, &result)
+		if err := v.validateBalance(ctx, order, &result); err != nil {
+			return result, err
+		}
 	}
 
 	return result, nil
@@ -108,7 +107,7 @@ func (v *Validator) validateStaticFields(order domain.Order, result *domain.Vali
 	}
 }
 
-func (v *Validator) validatePrice(order domain.Order, market MarketPrice, result *domain.ValidationResult) {
+func (v *Validator) validatePrice(order domain.Order, market domain.MarketPrice, result *domain.ValidationResult) {
 	expectedPrice := market.BaseSellPrice
 	if order.Type == domain.OrderTypeBuy {
 		expectedPrice = market.BaseSellPrice.Mul(one.Add(v.cfg.BuySpreadRate))
@@ -121,7 +120,7 @@ func (v *Validator) validatePrice(order domain.Order, market MarketPrice, result
 	if !withinTolerance(order.QuotedPrice, expectedPrice, v.cfg.PriceTolerance) {
 		result.AddViolation(
 			"stale_or_inconsistent_price",
-			"quoted_price %s is outside %s tolerance from expected price %s",
+			"quoted_price %s is outside %s%% tolerance from expected price %s",
 			order.QuotedPrice.StringFixedBank(2),
 			v.cfg.PriceTolerance.Mul(decimal.NewFromInt(100)).String(),
 			expectedPrice.StringFixedBank(2),
@@ -129,7 +128,7 @@ func (v *Validator) validatePrice(order domain.Order, market MarketPrice, result
 	}
 }
 
-func (v *Validator) validateDailyLimit(ctx context.Context, order domain.Order, result *domain.ValidationResult) {
+func (v *Validator) validateDailyLimit(ctx context.Context, order domain.Order, result *domain.ValidationResult) error {
 	tradeDate := order.TradeDate
 	if tradeDate.IsZero() {
 		tradeDate = time.Now().UTC()
@@ -137,8 +136,7 @@ func (v *Validator) validateDailyLimit(ctx context.Context, order domain.Order, 
 
 	used, err := v.volumes.TradedQuantity(ctx, order.CustomerID, tradeDate)
 	if err != nil {
-		result.AddViolation("daily_volume_unavailable", "could not load daily trading volume")
-		return
+		return fmt.Errorf("load daily trading volume: %w", err)
 	}
 
 	remaining := v.cfg.DailyLimit.Sub(used)
@@ -153,17 +151,17 @@ func (v *Validator) validateDailyLimit(ctx context.Context, order domain.Order, 
 			"daily trading limit exceeded; remaining allowance is %s baht-weight",
 			remaining.String(),
 		)
-		return
+		return nil
 	}
 
 	result.DailyRemainingAfter = remaining.Sub(order.Quantity)
+	return nil
 }
 
-func (v *Validator) validateBalance(ctx context.Context, order domain.Order, result *domain.ValidationResult) {
+func (v *Validator) validateBalance(ctx context.Context, order domain.Order, result *domain.ValidationResult) error {
 	balance, err := v.balances.AvailableBalance(ctx, order.CustomerID)
 	if err != nil {
-		result.AddViolation("balance_unavailable", "could not load available balance")
-		return
+		return fmt.Errorf("load available balance: %w", err)
 	}
 
 	totalCost := order.Quantity.Mul(order.QuotedPrice)
@@ -175,6 +173,7 @@ func (v *Validator) validateBalance(ctx context.Context, order domain.Order, res
 			totalCost.StringFixedBank(2),
 		)
 	}
+	return nil
 }
 
 func isMultipleOf(value decimal.Decimal, step decimal.Decimal) bool {

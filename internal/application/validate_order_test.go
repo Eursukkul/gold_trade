@@ -18,12 +18,13 @@ func TestValidatorValidate(t *testing.T) {
 	tradeDate := time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)
 
 	tests := []struct {
-		name      string
-		order     domain.Order
-		balance   string
-		usedDaily string
-		wantOK    bool
-		wantCode  string
+		name       string
+		order      domain.Order
+		balance    string
+		usedDaily  string
+		wantOK     bool
+		wantCode   string
+		wantSpread string
 	}{
 		{
 			name: "valid buy includes spread and daily limit",
@@ -34,9 +35,37 @@ func TestValidatorValidate(t *testing.T) {
 				QuotedPrice: dec("42360.75"),
 				TradeDate:   tradeDate,
 			},
+			balance:    "500000",
+			usedDaily:  "1.0",
+			wantOK:     true,
+			wantSpread: "210.75",
+		},
+		{
+			name: "valid sell has no spread",
+			order: domain.Order{
+				CustomerID:  "C001",
+				Type:        domain.OrderTypeSell,
+				Quantity:    dec("1.0"),
+				QuotedPrice: dec("42150"),
+				TradeDate:   tradeDate,
+			},
+			balance:    "500000",
+			usedDaily:  "0",
+			wantOK:     true,
+			wantSpread: "0",
+		},
+		{
+			name: "rejects empty customer id",
+			order: domain.Order{
+				CustomerID:  "",
+				Type:        domain.OrderTypeBuy,
+				Quantity:    dec("1.0"),
+				QuotedPrice: dec("42360.75"),
+				TradeDate:   tradeDate,
+			},
 			balance:   "500000",
-			usedDaily: "1.0",
-			wantOK:    true,
+			usedDaily: "0",
+			wantCode:  "missing_customer_id",
 		},
 		{
 			name: "rejects invalid order type",
@@ -52,6 +81,19 @@ func TestValidatorValidate(t *testing.T) {
 			wantCode:  "invalid_order_type",
 		},
 		{
+			name: "rejects zero quantity",
+			order: domain.Order{
+				CustomerID:  "C001",
+				Type:        domain.OrderTypeBuy,
+				Quantity:    dec("0"),
+				QuotedPrice: dec("42360.75"),
+				TradeDate:   tradeDate,
+			},
+			balance:   "500000",
+			usedDaily: "0",
+			wantCode:  "invalid_quantity",
+		},
+		{
 			name: "rejects quantity not multiple of half baht-weight",
 			order: domain.Order{
 				CustomerID:  "C001",
@@ -63,6 +105,19 @@ func TestValidatorValidate(t *testing.T) {
 			balance:   "500000",
 			usedDaily: "0",
 			wantCode:  "invalid_quantity_step",
+		},
+		{
+			name: "rejects zero quoted price",
+			order: domain.Order{
+				CustomerID:  "C001",
+				Type:        domain.OrderTypeBuy,
+				Quantity:    dec("1.0"),
+				QuotedPrice: dec("0"),
+				TradeDate:   tradeDate,
+			},
+			balance:   "500000",
+			usedDaily: "0",
+			wantCode:  "invalid_price",
 		},
 		{
 			name: "rejects insufficient balance",
@@ -112,7 +167,7 @@ func TestValidatorValidate(t *testing.T) {
 
 			store := inmemory.NewStore(
 				map[string]decimal.Decimal{"C001": dec(tt.balance)},
-				application.MarketPrice{BaseSellPrice: dec("42150"), AsOf: tradeDate},
+				domain.MarketPrice{BaseSellPrice: dec("42150"), AsOf: tradeDate},
 				map[string]decimal.Decimal{"C001:2026-04-01": dec(tt.usedDaily)},
 			)
 			validator := application.NewValidator(store, store, store, application.Config{})
@@ -127,8 +182,8 @@ func TestValidatorValidate(t *testing.T) {
 			if tt.wantCode != "" && !hasViolation(got, tt.wantCode) {
 				t.Fatalf("missing violation %q in %+v", tt.wantCode, got.Violations)
 			}
-			if tt.wantOK && !got.SpreadAmount.Equal(dec("210.75")) {
-				t.Fatalf("SpreadAmount = %s, want 210.75", got.SpreadAmount)
+			if tt.wantSpread != "" && !got.SpreadAmount.Equal(dec(tt.wantSpread)) {
+				t.Fatalf("SpreadAmount = %s, want %s", got.SpreadAmount, tt.wantSpread)
 			}
 		})
 	}
