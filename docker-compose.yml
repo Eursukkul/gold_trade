@@ -1,0 +1,4 @@
+services:
+  validator:
+    build: .
+    command: sh -c "go test ./... && go run ./cmd/order-validator"
